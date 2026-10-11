@@ -1,18 +1,20 @@
 # SwitchTelnetEmulator
 
-Emulador educativo de la CLI de un switch Cisco-like de capa 2. Permite practicar comandos IOS habituales mediante Telnet. **No es IOS/Cisco Packet Tracer**, no reenvía tramas Ethernet y no realiza convergencia STP ni intercambia BPDUs.
+An educational emulator of a Cisco-like Layer 2 switch CLI. Practice common IOS-style commands over Telnet. **This is not Cisco IOS or Cisco Packet Tracer**: it does not forward Ethernet frames, perform STP convergence, or exchange BPDUs.
 
-## Requisitos
+## Requirements
 
-- .NET SDK 9 o posterior (el proyecto apunta a `net9.0`; en el entorno original se comprobó con SDK 9.0.102).
+- .NET SDK 9 or later (the project targets `net9.0`; it was originally verified with SDK 9.0.102).
 
-## Iniciar
+## Getting started
 
-### Ejecutable para doble clic (Windows x64)
+### Standalone Windows x64 executable
 
-Haz doble clic en `publicar-windows.bat`. Publicará una versión autónoma en `publish\win-x64\SwitchTelnetEmulator.exe`; no requiere instalar .NET en el equipo donde se ejecute. Deja `emulator-settings.json` junto al `.exe` y ábrelo con el bloc de notas si quieres cambiar la escucha. La configuración inicial ya es `0.0.0.0:2323`. Al iniciar el `.exe` con doble clic se abre una ventana de consola que muestra el estado del servidor; déjala abierta mientras uses el emulador. Cierra esa ventana para detenerlo.
+Run `publicar-windows.bat` to publish a self-contained build to `publish\win-x64\SwitchTelnetEmulator.exe`. The target computer does not need .NET installed.
 
-El fichero configurable tiene esta forma:
+Keep `emulator-settings.json` beside the executable. Edit it with a text editor to change the listener settings. The default configuration is `0.0.0.0:2323`. When you launch the executable, a console window displays the server status; keep it open while using the emulator. Close the window to stop the server.
+
+The listener configuration has this format:
 
 ```json
 {
@@ -21,33 +23,39 @@ El fichero configurable tiene esta forma:
 }
 ```
 
-La escucha `0.0.0.0` permite conexiones desde otras interfaces de red. Puede ser necesario permitir el puerto 2323 en el Firewall de Windows. Telnet **no cifra** el tráfico; úsalo solo en redes confiables. La configuración de switch se guarda separadamente en `data\startup-config.json`, junto al ejecutable.
+Listening on `0.0.0.0` accepts connections on all network interfaces. You may need to allow port 2323 through Windows Firewall. Telnet **does not encrypt traffic**; use it only on trusted networks. The switch configuration is stored separately in `data\startup-config.json`, next to the executable.
 
-### Ejecución desde código
+### Run from source
 
-También puedes iniciarlo desde PowerShell:
+You can also start the emulator from PowerShell:
 
 ```powershell
 dotnet run --project .\SwitchTelnetEmulator
 ```
 
-Conecta PuTTY en modo **Telnet** a la dirección IP del equipo, puerto `2323` (o `127.0.0.1` desde el mismo equipo). Si está instalado el cliente Telnet de Windows, puedes usar `telnet 127.0.0.1 2323`. Los argumentos `--host`, `--port` y `--config` permiten sobrescribir los valores para esta ejecución.
+Connect with PuTTY in **Telnet** mode to the computer's IP address on port `2323` (or `127.0.0.1` from the same computer). If the Windows Telnet client is installed, you can connect with:
 
-## Modos y comandos soportados
+```powershell
+telnet 127.0.0.1 2323
+```
 
-Los comandos se introducen en inglés, como en IOS. Interfaces disponibles: `FastEthernet0/1`–`FastEthernet0/24` y `GigabitEthernet0/1`–`GigabitEthernet0/2` (también acepta formas abreviadas `Fa0/n`, `Gi0/n`). VLAN 1 viene creada.
+The `--host`, `--port`, and `--config` arguments override the listener settings and configuration file path for that run.
+
+## Supported modes and commands
+
+Enter commands in English, as in IOS. Available interfaces are `FastEthernet0/1`–`FastEthernet0/24` and `GigabitEthernet0/1`–`GigabitEthernet0/2` (abbreviations `Fa0/n` and `Gi0/n` are also accepted). VLAN 1 is created by default.
 
 ```text
 enable
 configure terminal
 hostname LabSwitch
 vlan 10
- name Usuarios
+ name Users
 exit
 interface FastEthernet0/1
  switchport mode access
  switchport access vlan 10
- description Puesto-1
+ description Workstation-1
  no shutdown
 exit
 interface GigabitEthernet0/1
@@ -65,11 +73,11 @@ show startup-config
 write memory
 ```
 
-Otros comandos incluidos: `show version`, `shutdown`, `no shutdown`, `spanning-tree portfast`/`no spanning-tree portfast`, `no vlan <id>`, `exit`, `end`, `disable`, `?`. La CLI soporta abreviaturas seleccionadas (p. ej. `en`, `conf t`, `int`, `sh vlan brief`, `wr mem`); no implementa el algoritmo general de abreviaturas ambiguas de IOS.
+Other supported commands include `show version`, `shutdown`, `no shutdown`, `spanning-tree portfast`/`no spanning-tree portfast`, `no vlan <id>`, `exit`, `end`, `disable`, and `?`. Selected abbreviations are supported (for example, `en`, `conf t`, `int`, `sh vlan brief`, and `wr mem`); the emulator does not implement IOS's general ambiguous-abbreviation algorithm.
 
-`show spanning-tree` es una vista determinista de un switch aislado, no una simulación de topología ni de convergencia. Los puertos representan estado de configuración, no enlaces activos reales. No se incluyen routing, port-channels, seguridad/autenticación, ACL, comandos de configuración seriales, acceso a otros dispositivos o todas las variantes de comandos Packet Tracer.
+`show spanning-tree` provides a deterministic view of an isolated switch; it is not a topology or convergence simulation. Ports represent configuration state, not real active links. Routing, port-channels, security/authentication, ACLs, serial configuration commands, access to other devices, and many Packet Tracer command variants are not included.
 
-## Compilar
+## Build and test
 
 ```powershell
 dotnet build .\SwitchTelnetEmulator.sln
