@@ -8,9 +8,10 @@ var configDirectory = AppContext.BaseDirectory;
 var listenConfigPath = Path.Combine(configDirectory, "emulator-settings.json");
 var configPath = Path.Combine(configDirectory, "data", "startup-config.json");
 (IPAddress Address, int Port) listener;
+EmulatorSettings settings;
 try
 {
-    var (settings, address) = EmulatorSettings.Load(listenConfigPath);
+    (settings, var address) = EmulatorSettings.Load(listenConfigPath);
     listener = (address, settings.Port);
 }
 catch (InvalidDataException exception)
@@ -49,7 +50,7 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 try
 {
-    await new TelnetServer(options.Address, options.Port, state, store).RunAsync(shutdown.Token);
+    await new TelnetServer(options.Address, options.Port, state, store, settings.Username, settings.Password).RunAsync(shutdown.Token);
 }
 catch (SocketException exception)
 {

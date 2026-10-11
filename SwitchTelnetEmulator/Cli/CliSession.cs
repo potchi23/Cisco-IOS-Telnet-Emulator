@@ -5,13 +5,17 @@ using SwitchTelnetEmulator.Persistence;
 
 namespace SwitchTelnetEmulator.Cli;
 
-public enum CliMode { User, Privileged, GlobalConfiguration, InterfaceConfiguration, VlanConfiguration }
+public enum CliMode { User, Privileged, GlobalConfiguration, InterfaceConfiguration, VlanConfiguration, LineConfiguration }
 
 public sealed class CliSession(SwitchState state, ConfigurationStore store)
 {
     private CliMode _mode = CliMode.User;
     private string? _selectedPort;
     private int? _selectedVlan;
+    private bool _collectingMotd;
+    private char _motdDelimiter;
+    private bool _motdFailed;
+    private readonly StringBuilder _motdLines = new();
 
     public string Prompt => _mode switch
     {
@@ -20,14 +24,22 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
         CliMode.GlobalConfiguration => $"{state.Hostname}(config)#",
         CliMode.InterfaceConfiguration => $"{state.Hostname}(config-if)#",
         CliMode.VlanConfiguration => $"{state.Hostname}(config-vlan)#",
+        CliMode.LineConfiguration => $"{state.Hostname}(config-line)#",
         _ => $"{state.Hostname}>"
     };
 
     public string Execute(string input)
     {
+        if (_collectingMotd)
+        {
+            var captureResult = CaptureMotdLine(input);
+            return captureResult is null ? string.Empty : captureResult;
+        }
         var line = input.Trim();
         if (line.Length == 0) return string.Empty;
         if (line is "?" or "help") return Help();
+        if (_mode is CliMode.GlobalConfiguration && line.StartsWith("banner motd ", StringComparison.OrdinalIgnoreCase))
+            return BeginMotd(line);
         if (line.EndsWith('?')) return Help(line[..^1].Trim());
 
         var tokens = Tokenize(line);
@@ -51,6 +63,7 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
             CliMode.GlobalConfiguration => ExecuteGlobal(command, args),
             CliMode.InterfaceConfiguration => ExecuteInterface(command, args),
             CliMode.VlanConfiguration => ExecuteVlan(command, args),
+            CliMode.LineConfiguration => ExecuteLine(command, args),
             _ => "% Invalid command."
         };
     }
@@ -113,12 +126,43 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
         }
         if (Is(command, "no", "no") && args.Count == 2 && Is(args[0], "vlan", "vl") && int.TryParse(args[1], out var vlanId))
             return state.TryDeleteVlan(vlanId, out var error) ? string.Empty : error;
+        if (command == "no" && args.Count == 2 && Is(args[0], "banner", "ban") && Is(args[1], "motd", "motd"))
+            return state.TrySetMotd(string.Empty, out var bannerError) ? string.Empty : bannerError;
+        if (Is(command, "line", "li") && Is(args.FirstOrDefault() ?? string.Empty, "vty", "vty") &&
+            (args.Count == 2 && args[1] == "0" || args.Count == 3 && args[1] == "0" && args[2] == "4"))
+        {
+            _mode = CliMode.LineConfiguration;
+            return string.Empty;
+        }
+        if (Is(command, "line", "li")) return "% Only line vty 0 or line vty 0 4 is supported.";
         if (Is(command, "interface", "int") && args.Count == 1)
         {
             if (!state.PortExists(args[0])) return $"% Invalid interface '{args[0]}'.";
             state.TryGetPort(args[0], out var port);
             _selectedPort = port.Name;
             _mode = CliMode.InterfaceConfiguration;
+            return string.Empty;
+        }
+        return "% Invalid input detected at '^' marker.";
+    }
+
+    private string ExecuteLine(string command, List<string> args)
+    {
+        if (Is(command, "password", "pass") && args.Count == 1)
+            return state.TrySetVtyPassword(args[0], out var error) ? string.Empty : error;
+        if (Is(command, "login", "log") && args.Count == 0)
+        {
+            state.SetVtyLogin(true);
+            return string.Empty;
+        }
+        if (command == "no" && args.Count == 1 && Is(args[0], "login", "log"))
+        {
+            state.SetVtyLogin(false);
+            return string.Empty;
+        }
+        if (command == "no" && args.Count == 1 && Is(args[0], "password", "pass"))
+        {
+            state.ClearVtyPassword();
             return string.Empty;
         }
         return "% Invalid input detected at '^' marker.";
@@ -162,6 +206,53 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
             return state.TrySetAllowedVlans(_selectedPort!, vlans, out var error) ? string.Empty : error;
         }
         return "% Invalid switchport command.";
+    }
+
+    private string BeginMotd(string line)
+    {
+        var value = line["banner motd ".Length..];
+        if (value.Length == 0) return "% Incomplete command.";
+        _motdDelimiter = value[0];
+        var close = value.IndexOf(_motdDelimiter, 1);
+        if (close >= 0)
+            return state.TrySetMotd(value[1..close], out var error) ? string.Empty : error;
+        _collectingMotd = true;
+        _motdLines.Clear();
+        if (value.Length > 1) _motdLines.Append(value[1..]).Append('\n');
+        return "Enter TEXT message. End with the delimiter.";
+    }
+
+    private string? CaptureMotdLine(string line)
+    {
+        if (_motdFailed)
+        {
+            if (line.Contains(_motdDelimiter))
+            {
+                _collectingMotd = false;
+                _motdFailed = false;
+                _motdLines.Clear();
+                return "% MOTD must be at most 4096 characters.";
+            }
+            return null;
+        }
+
+        var close = line.IndexOf(_motdDelimiter);
+        if (close >= 0)
+        {
+            _motdLines.Append(line[..close]);
+            _collectingMotd = false;
+            var banner = _motdLines.ToString().TrimEnd((char)13, (char)10);
+            _motdLines.Clear();
+            return state.TrySetMotd(banner, out var error) ? string.Empty : error;
+        }
+        _motdLines.Append(line).Append('\n');
+        if (_motdLines.Length > 4096)
+        {
+            _motdLines.Clear();
+            _motdFailed = true;
+            return null;
+        }
+        return string.Empty;
     }
 
     private string Show(List<string> args, bool privileged)
@@ -259,7 +350,8 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
             case CliMode.Privileged: _mode = CliMode.User; break;
             case CliMode.GlobalConfiguration: _mode = CliMode.Privileged; break;
             case CliMode.InterfaceConfiguration:
-            case CliMode.VlanConfiguration: _mode = CliMode.GlobalConfiguration; break;
+            case CliMode.VlanConfiguration:
+            case CliMode.LineConfiguration: _mode = CliMode.GlobalConfiguration; break;
         }
         _selectedPort = null;
         _selectedVlan = null;
@@ -277,9 +369,10 @@ public sealed class CliSession(SwitchState state, ConfigurationStore store)
         {
             CliMode.User => new[] { "enable", "exit", "help", "show", "show version", "show vlan brief", "?" },
             CliMode.Privileged => new[] { "configure terminal", "copy running-config startup-config", "disable", "exit", "show", "show interfaces status", "show interfaces trunk", "show running-config", "show spanning-tree", "show startup-config", "show vlan brief", "show version", "write memory", "?" },
-            CliMode.GlobalConfiguration => new[] { "end", "exit", "hostname", "interface", "no vlan", "vlan", "?" },
+            CliMode.GlobalConfiguration => new[] { "banner motd", "end", "exit", "hostname", "interface", "line vty", "no banner motd", "no vlan", "vlan", "?" },
             CliMode.InterfaceConfiguration => new[] { "description", "end", "exit", "no shutdown", "shutdown", "spanning-tree portfast", "switchport access vlan", "switchport mode access", "switchport mode trunk", "switchport trunk allowed vlan", "?" },
             CliMode.VlanConfiguration => new[] { "end", "exit", "name", "?" },
+            CliMode.LineConfiguration => new[] { "end", "exit", "login", "no login", "no password", "password", "?" },
             _ => Array.Empty<string>()
         };
         return string.Join("\n", commands.Where(command => command.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));

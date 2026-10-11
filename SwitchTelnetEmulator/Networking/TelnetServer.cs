@@ -6,13 +6,18 @@ using SwitchTelnetEmulator.Persistence;
 
 namespace SwitchTelnetEmulator.Networking;
 
-public sealed class TelnetServer(IPAddress address, int port, SwitchState state, ConfigurationStore store)
+public sealed class TelnetServer(IPAddress address, int port, SwitchState state, ConfigurationStore store, string username, string password)
 {
+    public int BoundPort { get; private set; }
+    public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         var listener = new TcpListener(address, port);
         listener.Start();
-        Console.WriteLine($"Switch emulator listening on {address}:{port}");
+        BoundPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        Console.WriteLine($"Switch emulator listening on {address}:{BoundPort}");
+        Started.TrySetResult();
         Console.WriteLine("Telnet is unencrypted. Keep the listener on loopback unless you trust the network.");
         try
         {
@@ -38,7 +43,33 @@ public sealed class TelnetServer(IPAddress address, int port, SwitchState state,
             {
                 await telnet.NegotiateAsync(cancellationToken);
                 var session = new CliSession(state, store);
-                await telnet.WriteAsync("\nSwitchTelnetEmulator - educational Layer 2 switch\nType ? for help.\n" + session.Prompt + " ", cancellationToken);
+                var access = state.GetVtyAccessPolicy();
+                if (!string.IsNullOrEmpty(access.Motd)) await telnet.WriteAsync("\n" + access.Motd + "\n", cancellationToken);
+                if (access.LoginEnabled)
+                {
+                    var effectivePassword = access.Password ?? password;
+                    if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(effectivePassword))
+                    {
+                        await telnet.WriteAsync("\nVTY login is enabled but no credentials are configured.\n", cancellationToken);
+                        return;
+                    }
+                    var authenticated = false;
+                    for (var attempt = 0; attempt < 3 && !authenticated; attempt++)
+                    {
+                        await telnet.WriteAsync("Username: ", cancellationToken);
+                        var suppliedUsername = await telnet.ReadLineAsync(cancellationToken);
+                        if (suppliedUsername is null) return;
+                        await telnet.WriteAsync("Password: ", cancellationToken);
+                        var suppliedPassword = await telnet.ReadLineAsync(cancellationToken, echo: false);
+                        if (suppliedPassword is null) return;
+                        authenticated = string.Equals(suppliedUsername, username, StringComparison.Ordinal) &&
+                            string.Equals(suppliedPassword, effectivePassword, StringComparison.Ordinal);
+                        if (!authenticated) await telnet.WriteAsync("\n% Login invalid\n", cancellationToken);
+                    }
+                    if (!authenticated) return;
+                    await telnet.WriteAsync("\n", cancellationToken);
+                }
+                await telnet.WriteAsync("SwitchTelnetEmulator - educational Layer 2 switch\nType ? for help.\n" + session.Prompt + " ", cancellationToken);
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     var command = await telnet.ReadLineAsync(cancellationToken);

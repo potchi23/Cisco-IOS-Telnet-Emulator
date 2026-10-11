@@ -41,8 +41,13 @@ public sealed class ConfigurationStore(string path)
 
     private static void Validate(SwitchConfiguration configuration)
     {
-        if (configuration.Hostname is null || configuration.Hostname.Length is < 1 or > 32 || configuration.Vlans is null || configuration.Ports is null)
-            throw new InvalidDataException("Invalid hostname, VLAN table, or port table.");
+        if (configuration.Hostname is null || configuration.Hostname.Length is < 1 or > 32 || configuration.Vlans is null || configuration.Ports is null || configuration.Vty is null || configuration.Motd is null)
+            throw new InvalidDataException("Invalid hostname, VLAN, port, VTY, or MOTD configuration.");
+        if (configuration.Motd.Length > 4096 || configuration.Motd.Any(c => char.IsControl(c) && c is not ('\r' or '\n' or '\t')) ||
+            configuration.Vty.Password is { } password && (password.Length is < 1 or > 128 || password.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))))
+            throw new InvalidDataException("Invalid VTY password or MOTD.");
+        if (configuration.Vty.LoginEnabled && configuration.Vty.Password is { Length: 0 })
+            throw new InvalidDataException("VTY password cannot be empty.");
         if (!configuration.Vlans.ContainsKey(1) || configuration.Vlans.Any(pair => pair.Key is < 1 or > 4094 || pair.Value is null || pair.Value.Id != pair.Key))
             throw new InvalidDataException("VLAN table contains an invalid entry or is missing VLAN 1.");
         if (configuration.Ports.Count != 26 || configuration.Ports.Any(pair =>

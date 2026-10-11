@@ -39,7 +39,7 @@ public sealed class TelnetConnection
         await stream.FlushAsync(cancellationToken);
     }
 
-    public async Task<string?> ReadLineAsync(CancellationToken cancellationToken)
+    public async Task<string?> ReadLineAsync(CancellationToken cancellationToken, bool echo = true)
     {
         var line = new List<byte>();
         var one = new byte[1];
@@ -81,12 +81,12 @@ public sealed class TelnetConnection
             if (value == 13)
             {
                 _skipNextLineTerminator = true;
-                await WriteAsync("\n", cancellationToken);
+                if (echo) await WriteAsync("\n", cancellationToken);
                 return Encoding.UTF8.GetString(line.ToArray());
             }
             if (value == 10)
             {
-                await WriteAsync("\n", cancellationToken);
+                if (echo) await WriteAsync("\n", cancellationToken);
                 return Encoding.UTF8.GetString(line.ToArray());
             }
             if (value is 8 or 127)
@@ -94,14 +94,14 @@ public sealed class TelnetConnection
                 if (line.Count > 0)
                 {
                     line.RemoveAt(line.Count - 1);
-                    await WriteAsync("\b \b", cancellationToken);
+                    if (echo) await WriteAsync("\b \b", cancellationToken);
                 }
                 continue;
             }
             if (value < 32 && value != 9) continue;
             if (line.Count >= 4096) continue;
             line.Add(value);
-            await stream.WriteAsync(new[] { value }, cancellationToken);
+            if (echo) await stream.WriteAsync(new[] { value }, cancellationToken);
         }
     }
 

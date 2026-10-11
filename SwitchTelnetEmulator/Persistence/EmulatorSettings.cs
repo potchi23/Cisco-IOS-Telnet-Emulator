@@ -7,6 +7,8 @@ public sealed class EmulatorSettings
 {
     public string ListenAddress { get; set; } = "0.0.0.0";
     public int Port { get; set; } = 2323;
+    public string Username { get; set; } = "admin";
+    public string Password { get; set; } = "cisco";
 
     public static (EmulatorSettings Settings, IPAddress Address) Load(string path)
     {
@@ -33,6 +35,10 @@ public sealed class EmulatorSettings
             throw new InvalidDataException($"ListenAddress no es una dirección IP válida: '{settings.ListenAddress}'.");
         if (settings.Port is < 1 or > 65535)
             throw new InvalidDataException("Port debe estar entre 1 y 65535.");
+        if (settings.Username is null || string.IsNullOrWhiteSpace(settings.Username) || settings.Username.Any(char.IsControl))
+            throw new InvalidDataException("Username must not be empty or contain control characters.");
+        if (settings.Password is null || string.IsNullOrEmpty(settings.Password) || settings.Password.Any(char.IsControl))
+            throw new InvalidDataException("Password must not be empty or contain control characters.");
 
         return (settings, address);
     }

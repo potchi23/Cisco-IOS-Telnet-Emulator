@@ -39,6 +39,47 @@ public sealed class SwitchState
         lock (_sync) return _startup.Clone();
     }
 
+    public SwitchConfiguration.VtyAccessPolicy GetVtyAccessPolicy()
+    {
+        lock (_sync) return new SwitchConfiguration.VtyAccessPolicy(_running.Motd, _running.Vty.LoginEnabled, _running.Vty.Password);
+    }
+
+    public bool TrySetVtyPassword(string password, out string error)
+    {
+        if (password.Length is < 1 or > 128 || password.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
+        {
+            error = "% Password must be 1-128 non-whitespace characters.";
+            return false;
+        }
+
+        lock (_sync) _running.Vty.Password = password;
+        error = string.Empty;
+        return true;
+    }
+
+    public void SetVtyLogin(bool enabled)
+    {
+        lock (_sync) _running.Vty.LoginEnabled = enabled;
+    }
+
+    public void ClearVtyPassword()
+    {
+        lock (_sync) _running.Vty.Password = null;
+    }
+
+    public bool TrySetMotd(string value, out string error)
+    {
+        if (value.Length > 4096 || value.Any(c => char.IsControl(c) && c is not ((char)13 or (char)10 or (char)9)))
+        {
+            error = "% MOTD must be at most 4096 characters and contain no control characters.";
+            return false;
+        }
+
+        lock (_sync) _running.Motd = value;
+        error = string.Empty;
+        return true;
+    }
+
     public bool TrySetHostname(string value, out string error)
     {
         value = value.Trim();
@@ -266,6 +307,21 @@ public sealed class SwitchState
     {
         var output = new StringBuilder();
         output.AppendLine($"hostname {configuration.Hostname}");
+        if (!string.IsNullOrEmpty(configuration.Motd))
+        {
+            var delimiter = Enumerable.Range(33, 94).Concat(Enumerable.Range(161, 0xD7FF - 160))
+                .Select(value => (char)value)
+                .First(candidate => !configuration.Motd.Contains(candidate));
+            output.AppendLine($"banner motd {delimiter}");
+            output.Append(configuration.Motd);
+            output.AppendLine();
+            output.AppendLine(delimiter.ToString());
+        }
+        output.AppendLine("!");
+        output.AppendLine("line vty 0 4");
+        if (!string.IsNullOrEmpty(configuration.Vty.Password)) output.AppendLine($" password {configuration.Vty.Password}");
+        output.AppendLine(configuration.Vty.LoginEnabled ? " login" : " no login");
+        output.AppendLine("!");
         output.AppendLine("!");
         foreach (var vlan in configuration.Vlans.Values.OrderBy(v => v.Id))
         {
@@ -292,7 +348,19 @@ public sealed class SwitchState
 public sealed class SwitchConfiguration
 {
     public string Hostname { get; set; } = "Switch";
+    public string Motd { get; set; } = string.Empty;
+    public VtyConfiguration Vty { get; set; } = new();
     public Dictionary<int, VlanState> Vlans { get; set; } = new();
+
+    public sealed class VtyConfiguration
+    {
+        public bool LoginEnabled { get; set; } = true;
+        public string? Password { get; set; }
+
+        public VtyConfiguration Clone() => new() { LoginEnabled = LoginEnabled, Password = Password };
+    }
+
+    public sealed record VtyAccessPolicy(string Motd, bool LoginEnabled, string? Password);
     public Dictionary<string, PortState> Ports { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public static SwitchConfiguration CreateDefault()
@@ -315,6 +383,8 @@ public sealed class SwitchConfiguration
     public SwitchConfiguration Clone() => new()
     {
         Hostname = Hostname,
+        Motd = Motd,
+        Vty = Vty.Clone(),
         Vlans = Vlans.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()),
         Ports = Ports.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.OrdinalIgnoreCase)
     };

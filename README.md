@@ -12,18 +12,20 @@ An educational emulator of a Cisco-like Layer 2 switch CLI. Practice common IOS-
 
 Run `publish-windows.bat` to publish a self-contained build to `publish\win-x64\SwitchTelnetEmulator.exe`. The target computer does not need .NET installed.
 
-Keep `emulator-settings.json` beside the executable. Edit it with a text editor to change the listener settings. The default configuration is `0.0.0.0:2323`. When you launch the executable, a console window displays the server status; keep it open while using the emulator. Close the window to stop the server.
+Keep `emulator-settings.json` beside the executable. Edit it with a text editor to change the listener and initial login credentials. Defaults are `0.0.0.0:2323`, username `admin`, and password `cisco`. When you launch the executable, a console window displays the server status; keep it open while using the emulator. Close the window to stop the server.
 
-The listener configuration has this format:
+The settings file has this format:
 
 ```json
 {
   "ListenAddress": "0.0.0.0",
-  "Port": 2323
+  "Port": 2323,
+  "Username": "admin",
+  "Password": "cisco"
 }
 ```
 
-Listening on `0.0.0.0` accepts connections on all network interfaces. You may need to allow port 2323 through Windows Firewall. Telnet **does not encrypt traffic**; use it only on trusted networks. The switch configuration is stored separately in `data\startup-config.json`, next to the executable.
+Listening on `0.0.0.0` accepts connections on all network interfaces. You may need to allow port 2323 through Windows Firewall. Telnet does not encrypt usernames, passwords, or session data, and the settings file stores the initial password as plain text. Use the emulator only on trusted networks. The switch configuration is stored separately in `data\startup-config.json`, next to the executable; VTY password overrides are also stored there in plain text.
 
 ### Run from source
 
@@ -49,6 +51,11 @@ Enter commands in English, as in IOS. Available interfaces are `FastEthernet0/1`
 enable
 configure terminal
 hostname LabSwitch
+banner motd #Welcome to the lab switch#
+line vty 0 4
+ password cisco
+ login
+exit
 vlan 10
  name Users
 exit
@@ -73,9 +80,9 @@ show startup-config
 write memory
 ```
 
-Other supported commands include `show version`, `shutdown`, `no shutdown`, `spanning-tree portfast`/`no spanning-tree portfast`, `no vlan <id>`, `exit`, `end`, `disable`, and `?`. Selected abbreviations are supported (for example, `en`, `conf t`, `int`, `sh vlan brief`, and `wr mem`); the emulator does not implement IOS's general ambiguous-abbreviation algorithm.
+Other supported commands include `show version`, `shutdown`, `no shutdown`, `spanning-tree portfast`/`no spanning-tree portfast`, `no vlan <id>`, `no login`, `no password`, `no banner motd`, `exit`, `end`, `disable`, and `?`. `line vty 0 4` configures the emulator's shared Telnet line; `password <value>` changes its password and `login` enables authentication. Login is enabled by default and uses the username/password in `emulator-settings.json` until a VTY password is configured. `no login` disables authentication. MOTD banners use a delimiter, for example `banner motd #Welcome to the lab#`; for multiline banners, put the closing delimiter on a later line. Selected abbreviations are supported (for example, `en`, `conf t`, `int`, `sh vlan brief`, and `wr mem`); the emulator does not implement IOS's general ambiguous-abbreviation algorithm.
 
-`show spanning-tree` provides a deterministic view of an isolated switch; it is not a topology or convergence simulation. Ports represent configuration state, not real active links. Routing, port-channels, security/authentication, ACLs, serial configuration commands, access to other devices, and many Packet Tracer command variants are not included.
+`show spanning-tree` provides a deterministic view of an isolated switch; it is not a topology or convergence simulation. Ports represent configuration state, not real active links. Authentication here is only an educational CLI feature; credentials are transmitted over unencrypted Telnet and stored as plain text. Routing, port-channels, ACLs, serial configuration commands, access to other devices, and many Packet Tracer command variants are not included.
 
 ## Build and test
 
