@@ -1,0 +1,25 @@
+# .NET build outputs
+**/bin/
+**/obj/
+
+# Published binaries and generated release artifacts
+/publish/
+/artifacts/
+
+# Runtime switch configuration and temporary atomic-save files
+**/data/
+**/startup-config.json
+**/startup-config.json.tmp
+
+# IDE/editor files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs and crash dumps
+*.log
+*.dmp
