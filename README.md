@@ -10,7 +10,7 @@ An educational emulator of a Cisco-like Layer 2 switch CLI. Practice common IOS-
 
 ### Standalone Windows x64 executable
 
-Run `publicar-windows.bat` to publish a self-contained build to `publish\win-x64\SwitchTelnetEmulator.exe`. The target computer does not need .NET installed.
+Run `publish-windows.bat` to publish a self-contained build to `publish\win-x64\SwitchTelnetEmulator.exe`. The target computer does not need .NET installed.
 
 Keep `emulator-settings.json` beside the executable. Edit it with a text editor to change the listener settings. The default configuration is `0.0.0.0:2323`. When you launch the executable, a console window displays the server status; keep it open while using the emulator. Close the window to stop the server.
 
