@@ -1,4 +1,4 @@
-# SwitchTelnetEmulator
+# Cisco IOS Telnet Emulator
 
 An educational emulator of a Cisco-like Layer 2 switch CLI. Practice common IOS-style commands over Telnet. **This is not Cisco IOS or Cisco Packet Tracer**: it does not forward Ethernet frames, perform STP convergence, or exchange BPDUs.
 
